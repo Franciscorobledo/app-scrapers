@@ -1,0 +1,19 @@
+# Python cache files
+__pycache__/
+*.py[cod]
+
+# Virtual environment
+venv/
+.env
+
+# Logs
+*.log
+
+# Byte-compiled / optimized / DLL files
+*.so
+*.egg-info/
+*.egg
+*.whl
+
+# Jupyter Notebook
+.ipynb_checkpoints/
