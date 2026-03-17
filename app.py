@@ -1,4 +1,5 @@
 import logging
+import os
 import re
 from dataclasses import dataclass, asdict
 from typing import Callable, Optional
@@ -270,4 +271,17 @@ if __name__ == "__main__":
         level=logging.INFO,
         format="%(asctime)s | %(levelname)s | %(message)s",
     )
-    process_products()
+    input_file = os.environ.get("INPUT_FILE", "productos.xlsx")
+    output_file = os.environ.get("OUTPUT_FILE", "resultados.xlsx")
+
+    if os.path.exists(input_file):
+        process_products(input_file=input_file, output_file=output_file)
+    else:
+        logging.warning(
+            "No se encontró %s. Iniciando API Flask para entorno de despliegue.",
+            input_file,
+        )
+        from main import app as flask_app
+
+        port = int(os.environ.get("PORT", 5000))
+        flask_app.run(host="0.0.0.0", port=port)

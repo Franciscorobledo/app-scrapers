@@ -1,3 +1,4 @@
+import re
 from urllib.parse import quote_plus
 
 import requests
@@ -11,40 +12,83 @@ HEADERS = {
     )
 }
 TIMEOUT = 20
+WORD_RE = re.compile(r"[a-z0-9áéíóúñ]+", re.IGNORECASE)
 
 
 def _clean_text(value: str) -> str:
     return " ".join((value or "").split()).strip()
 
 
-def _search_mercadolibre_requests(query: str) -> dict | None:
+def _tokenize(text: str) -> set[str]:
+    return {t.lower() for t in WORD_RE.findall(text or "")}
+
+
+def _similarity_score(query: str, candidate_name: str) -> int:
+    query_tokens = _tokenize(query)
+    name_tokens = _tokenize(candidate_name)
+    if not query_tokens or not name_tokens:
+        return 0
+
+    score = len(query_tokens.intersection(name_tokens)) * 10
+    if query.lower() in (candidate_name or "").lower():
+        score += 5
+    return score
+
+
+def _search_mercadolibre_requests(query: str, limit: int = 12) -> dict | None:
     url = f"https://listado.mercadolibre.cl/{quote_plus(query)}"
     response = requests.get(url, headers=HEADERS, timeout=TIMEOUT)
     response.raise_for_status()
 
     soup = BeautifulSoup(response.text, "html.parser")
-    item = soup.select_one("li.ui-search-layout__item")
-    if not item:
+    items = soup.select("li.ui-search-layout__item")
+    if not items:
         return None
 
-    link = item.select_one("a.ui-search-item__group__element")
-    if not link:
+    candidates: list[dict] = []
+    for item in items[:limit]:
+        link = item.select_one("a.ui-search-item__group__element")
+        if not link:
+            continue
+
+        title = item.select_one("h2.ui-search-item__title")
+        name = _clean_text(title.get_text(" ") if title else "")
+        if not name:
+            continue
+
+        fraction = item.select_one("span.andes-money-amount__fraction")
+        cents = item.select_one("span.andes-money-amount__cents")
+
+        price = ""
+        if fraction:
+            price = f"${_clean_text(fraction.get_text())}"
+            if cents:
+                price = f"{price},{_clean_text(cents.get_text())}"
+
+        candidates.append(
+            {
+                "nombre": name,
+                "precio": price,
+                "url": link.get("href", ""),
+                "score": _similarity_score(query, name),
+            }
+        )
+
+    if not candidates:
         return None
 
-    title = item.select_one("h2.ui-search-item__title")
-    fraction = item.select_one("span.andes-money-amount__fraction")
-    cents = item.select_one("span.andes-money-amount__cents")
-
-    price = ""
-    if fraction:
-        price = f"${_clean_text(fraction.get_text())}"
-        if cents:
-            price = f"{price},{_clean_text(cents.get_text())}"
+    best = max(candidates, key=lambda c: c["score"])
+    if best["score"] == 0:
+        return {
+            "nombre": candidates[0]["nombre"],
+            "precio": candidates[0]["precio"],
+            "url": candidates[0]["url"],
+        }
 
     return {
-        "nombre": _clean_text(title.get_text(" ") if title else ""),
-        "precio": price,
-        "url": link.get("href", ""),
+        "nombre": best["nombre"],
+        "precio": best["precio"],
+        "url": best["url"],
     }
 
 
