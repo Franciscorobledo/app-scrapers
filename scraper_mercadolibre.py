@@ -19,19 +19,8 @@ def _clean_text(value: str) -> str:
     return " ".join((value or "").split()).strip()
 
 
-def _normalize_token(token: str) -> str:
-    """Normaliza tokens para evitar diferencias por plural simple."""
-    base = token.lower().strip()
-    if len(base) > 4 and base.endswith("es"):
-        return base[:-2]
-    if len(base) > 3 and base.endswith("s"):
-        return base[:-1]
-    return base
-
-
 def _tokenize(text: str) -> set[str]:
-    """Versión elegida tras conflicto: tokenización + normalización de plural."""
-    return {_normalize_token(token) for token in WORD_RE.findall(text or "")}
+    return {token.lower() for token in WORD_RE.findall(text or "")}
 
 
 def _similarity_score(query: str, candidate_name: str) -> int:
