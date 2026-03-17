@@ -6,6 +6,11 @@ from urllib.parse import quote
 import requests
 from bs4 import BeautifulSoup
 
+try:
+    from playwright.sync_api import sync_playwright
+except Exception:  # pragma: no cover
+    sync_playwright = None
+
 BASE_URL = "https://listado.mercadolibre.cl"
 API_URL = "https://api.mercadolibre.com/sites/MLC/search"
 TIMEOUT = 20
@@ -68,6 +73,146 @@ def _normalize_price(price: str) -> str:
     if not cleaned:
         return ""
     return cleaned if cleaned.startswith("$") else f"${cleaned}"
+
+
+def _extract_sku_from_url(url: str) -> str:
+    sku_match = re.search(r"MLC-?(\d+)", url or "", re.IGNORECASE)
+    return f"MLC{sku_match.group(1)}" if sku_match else ""
+
+
+def scrape_mercadolibre(producto: str) -> dict:
+    """Scraper Playwright de Mercado Libre.
+
+    Retorna estructura completa con todos los resultados detectados.
+    """
+    producto = _clean_text(producto)
+    query = producto.replace(" ", "-")
+    url = f"{BASE_URL}/{query}"
+    resultados: list[dict] = []
+
+    if sync_playwright is None:
+        print("[Mercado Libre] Playwright no está disponible")
+        return {"nombre_original": producto, "total": 0, "resultados": []}
+
+    with sync_playwright() as p:
+        browser = p.chromium.launch(headless=True)
+        context = browser.new_context(
+            user_agent=(
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                "AppleWebKit/537.36 (KHTML, like Gecko) "
+                "Chrome/120.0.0.0 Safari/537.36"
+            ),
+            locale="es-CL",
+        )
+        page = context.new_page()
+        page.route("**/*.{png,jpg,jpeg,gif,svg,woff,woff2}", lambda route: route.abort())
+
+        print(f"[Mercado Libre] Abriendo: {url}")
+        page.goto(url, wait_until="domcontentloaded", timeout=30000)
+
+        try:
+            page.wait_for_selector("li.ui-search-layout__item", timeout=15000)
+        except Exception:
+            print("[Mercado Libre] Timeout esperando resultados")
+            browser.close()
+            return {"nombre_original": producto, "total": 0, "resultados": []}
+
+        page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
+        page.wait_for_timeout(2000)
+
+        items = page.query_selector_all("li.ui-search-layout__item")
+        print(f"[Mercado Libre] Items encontrados: {len(items)}")
+
+        for item in items:
+            if len(resultados) >= MAX_RESULTS:
+                break
+            try:
+                nombre = ""
+                for selector in [
+                    "h2.ui-search-item__title",
+                    "h2",
+                    "a.ui-search-link__title-card",
+                    "[class*='title']",
+                    "a[class*='link']",
+                ]:
+                    el = item.query_selector(selector)
+                    if el:
+                        texto = _clean_text(el.inner_text())
+                        if len(texto) > 3:
+                            nombre = texto
+                            break
+
+                url_producto = ""
+                for sel_link in ["a.ui-search-link", "a[href*='mercadolibre']", "a"]:
+                    link_el = item.query_selector(sel_link)
+                    if link_el:
+                        href = _clean_text(link_el.get_attribute("href") or "")
+                        if href.startswith("http"):
+                            url_producto = href.split("#")[0]
+                            break
+
+                precio = ""
+                for sel_precio in [
+                    "span.andes-money-amount__fraction",
+                    "[class*='price'] [class*='fraction']",
+                    "[class*='amount__fraction']",
+                    "[class*='price']",
+                ]:
+                    fraccion_el = item.query_selector(sel_precio)
+                    if fraccion_el:
+                        monto = _clean_text(fraccion_el.inner_text())
+                        if monto:
+                            precio = f"$ {monto}"
+                            centavos_el = item.query_selector(
+                                "span.andes-money-amount__cents, [class*='amount__cents']"
+                            )
+                            if centavos_el:
+                                precio += f",{_clean_text(centavos_el.inner_text())}"
+                            break
+
+                tienda = "MercadoLibre"
+                for sel_tienda in [
+                    "p.ui-search-official-store-label",
+                    "[class*='official-store']",
+                    "[class*='store-label']",
+                ]:
+                    tienda_el = item.query_selector(sel_tienda)
+                    if tienda_el:
+                        texto_tienda = _clean_text(tienda_el.inner_text())
+                        tienda = re.sub(r"^(por|by)\s+", "", texto_tienda, flags=re.IGNORECASE).strip()
+                        break
+
+                sku = _extract_sku_from_url(url_producto)
+
+                if not nombre and url_producto:
+                    full_text = _clean_text(item.inner_text())
+                    for linea in full_text.splitlines():
+                        linea = _clean_text(linea)
+                        if len(linea) > 5:
+                            nombre = linea
+                            break
+
+                if nombre or url_producto:
+                    resultados.append(
+                        {
+                            "nombre": nombre,
+                            "precio": precio,
+                            "tienda": tienda,
+                            "url": url_producto,
+                            "sku": sku,
+                        }
+                    )
+            except Exception as exc:
+                print(f"[Mercado Libre] Error parseando item: {exc}")
+
+        browser.close()
+
+    output = {
+        "nombre_original": producto,
+        "total": len(resultados),
+        "resultados": resultados,
+    }
+    return output
 
 
 def _parse_item(item) -> dict | None:
@@ -190,8 +335,13 @@ def buscar_mercadolibre(query: str) -> list[dict]:
         print("[Mercado Libre] query vacía")
         return []
 
-    # Estrategia principal: API pública (estable y rápida).
-    results = _search_api(query)
+    # Estrategia principal: Playwright para capturar contenido dinámico.
+    scraped = scrape_mercadolibre(query)
+    results = scraped.get("resultados", []) if isinstance(scraped, dict) else []
+
+    # Fallback: API pública (rápida) si Playwright no entrega resultados.
+    if not results:
+        results = _search_api(query)
 
     # Fallback: scraping HTML si API devuelve vacío.
     if not results:
