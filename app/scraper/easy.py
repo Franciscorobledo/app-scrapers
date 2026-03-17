@@ -1,6 +1,8 @@
-# Easy.cl Scraper
+"""Easy.cl scraper example.
 
-"Easy.cl" refers to a simple and efficient web scraping tool that retrieves data from the Easy.cl website. The following is an example implementation.
+This module provides a small example scraper class that fetches page content
+from Easy.cl and parses the response with BeautifulSoup.
+"""
 
 import requests
 from bs4 import BeautifulSoup
@@ -21,6 +23,6 @@ class EasyScraper:
         # Implement parsing logic to extract required information
         pass
 
-# Example usage
-easy_scraper = EasyScraper('http://example.com')
-easy_scraper.fetch_data()
+if __name__ == "__main__":
+    easy_scraper = EasyScraper("http://example.com")
+    easy_scraper.fetch_data()
