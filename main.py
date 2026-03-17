@@ -1,3 +1,4 @@
+import logging
 import os
 from typing import Any
 
@@ -10,6 +11,7 @@ from scraper_sodimac import search_sodimac
 
 app = Flask(__name__)
 
+logging.basicConfig(level=logging.INFO, format="%(asctime)s | %(levelname)s | %(message)s")
 
 STORE_SEARCHERS = [
     ("Sodimac", search_sodimac),
@@ -37,9 +39,16 @@ def run_store_search(search_fn, sku: str, nombre: str, tienda: str) -> dict[str,
         if not query:
             continue
         try:
-            print(f"[{tienda}] buscando con query: {query}")
+            logging.info("[%s] buscando con query: %s", tienda, query)
             found = search_fn(query)
             if found:
+                logging.info(
+                    "[%s] encontrado nombre=%s precio=%s url=%s",
+                    tienda,
+                    clean_text(found.get("nombre", "")),
+                    clean_text(found.get("precio", "")),
+                    clean_text(found.get("url", "")),
+                )
                 return {
                     "tienda": tienda,
                     "nombre": clean_text(found.get("nombre", "")),
@@ -48,9 +57,10 @@ def run_store_search(search_fn, sku: str, nombre: str, tienda: str) -> dict[str,
                 }
         except Exception as exc:  # Keep process alive per store
             last_error = str(exc)
-            print(f"[{tienda}] error buscando '{query}': {exc}")
+            logging.exception("[%s] error buscando '%s': %s", tienda, query, exc)
 
     if last_error:
+        logging.warning("[%s] búsqueda finalizó con error: %s", tienda, last_error)
         return {
             "tienda": tienda,
             "nombre": "",
@@ -59,6 +69,7 @@ def run_store_search(search_fn, sku: str, nombre: str, tienda: str) -> dict[str,
             "error": f"No se pudo completar la búsqueda: {last_error}",
         }
 
+    logging.warning("[%s] sin resultados", tienda)
     return {
         "tienda": tienda,
         "nombre": "",
@@ -75,7 +86,7 @@ def process_product_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
         sku = clean_text(row.get("SKU") or row.get("sku"))
         nombre = clean_text(row.get("Nombre") or row.get("nombre"))
 
-        print(f"Procesando producto {idx}/{total} | SKU: {sku}")
+        logging.info("Procesando producto %s/%s | SKU: %s | Nombre: %s", idx, total, sku, nombre)
 
         resultados = []
         for tienda, search_fn in STORE_SEARCHERS:
