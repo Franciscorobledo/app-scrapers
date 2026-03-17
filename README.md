@@ -4,6 +4,8 @@ API en Flask para scraping de productos en Chile, pensada para consumo desde n8n
 
 ## Endpoints
 
+- `GET /` → estado API + prueba rápida con `?producto=destornillador`
+- `GET /buscar?producto=destornillador` → búsqueda rápida en tiendas
 - `GET /health` → `{"status": "ok"}`
 - `GET /test` → `{"message": "API funcionando correctamente"}`
 - `POST /scrape` (multipart/form-data)
@@ -44,3 +46,11 @@ Comando recomendado de inicio:
 ```bash
 python main.py
 ```
+
+
+Prueba rápida en Render:
+
+```
+https://app-scraper-29uy.onrender.com/?producto=destornillador
+```
+
