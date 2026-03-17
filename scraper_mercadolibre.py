@@ -20,7 +20,7 @@ def _clean_text(value: str) -> str:
 
 
 def _tokenize(text: str) -> set[str]:
-    return {token.lower() for token in WORD_RE.findall(text or "")}
+    return {t.lower() for t in WORD_RE.findall(text or "")}
 
 
 def _similarity_score(query: str, candidate_name: str) -> int:
