@@ -93,6 +93,39 @@ def process_product_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return output
 
 
+
+
+@app.get("/")
+def root():
+    producto = clean_text(request.args.get("producto"))
+
+    if not producto:
+        return (
+            jsonify(
+                {
+                    "message": "API de scraping activa",
+                    "como_probar": {
+                        "ejemplo": "/?producto=destornillador",
+                        "alternativa": "/buscar?producto=destornillador",
+                    },
+                }
+            ),
+            200,
+        )
+
+    result = process_product_rows([{"sku": "", "nombre": producto}])
+    return jsonify(result[0]), 200
+
+
+@app.get("/buscar")
+def buscar_producto():
+    producto = clean_text(request.args.get("producto"))
+    if not producto:
+        return jsonify({"error": "Debes enviar el parámetro 'producto'"}), 400
+
+    result = process_product_rows([{"sku": "", "nombre": producto}])
+    return jsonify(result[0]), 200
+
 @app.get("/health")
 def health() -> tuple[dict[str, str], int]:
     return {"status": "ok"}, 200
