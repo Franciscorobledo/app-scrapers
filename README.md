@@ -1,17 +1,32 @@
-# Project Documentation
+# App Scrapers
 
-## Overview
-This project consists of various web scraping utilities designed to extract data from different websites.
+Script de scraping para comparar productos en tiendas chilenas (Sodimac, Mercado Libre y Easy) usando un Excel de entrada.
 
-## Features
-- Feature 1: Description
-- Feature 2: Description
-- Feature 3: Description
+## Requisitos
 
-## Usage
-1. Clone the repository.
-2. Install the necessary dependencies.
-3. Run the desired scraper.
+```bash
+pip install -r requirements.txt
+```
 
-## Contribution
-Feel free to submit issues and pull requests to improve the project.
+## Uso
+
+1. Crear un archivo `productos.xlsx` con columnas:
+   - `SKU`
+   - `Nombre`
+2. Ejecutar:
+
+```bash
+python app.py
+```
+
+3. El script generará `resultados.xlsx` con columnas:
+   - SKU original
+   - Nombre original
+   - Nombre encontrado
+   - Precio
+   - URL
+   - Tienda
+
+## Nota de despliegue en Render
+
+Si Render intenta correr `python app.py`, este repositorio ahora incluye ese archivo en la raíz.
