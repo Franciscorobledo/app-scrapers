@@ -7,10 +7,8 @@ import requests
 from bs4 import BeautifulSoup
 
 BASE_URL = "https://listado.mercadolibre.cl"
-API_URL = "https://api.mercadolibre.com/sites/MLC/search"
 TIMEOUT = 20
 MAX_RESULTS = 5
-WORD_RE = re.compile(r"[a-z0-9áéíóúñ]+", re.IGNORECASE)
 
 HEADERS = {
     "User-Agent": (
@@ -52,6 +50,9 @@ def _score_result(query: str, nombre: str) -> int:
 
     return score
 
+    nombre = _clean_text(title_node.get_text(" ") if title_node else "")
+    precio = _clean_text(price_node.get_text(" ") if price_node else "")
+    url = _clean_text(link_node.get("href", "") if link_node else "")
 
 def _slugify_query(query: str) -> str:
     normalized = _normalize(query)
@@ -194,24 +195,32 @@ def buscar_mercadolibre(query: str) -> list[dict]:
         print("No se encontraron resultados en Mercado Libre")
         return []
 
+def buscar_mercadolibre(query: str) -> list[dict]:
+    if not _clean_text(query):
+        print("No se encontraron resultados en Mercado Libre")
+        return []
+
     search_url = _build_search_url(query)
     print(f"[Mercado Libre] URL consultada: {search_url}")
 
-    html = ""
     try:
         response = requests.get(search_url, headers=HEADERS, timeout=TIMEOUT)
         response.raise_for_status()
-        html = response.text
     except requests.RequestException as exc:
-        print(f"[Mercado Libre] Error en request HTML: {exc}")
+        print(f"[Mercado Libre] Error en request: {exc}")
+        return []
 
-    results = _extract_from_html(html) if html else []
-    if not results and html:
-        results = _extract_from_jsonld(html)
-    if not results:
-        results = _fallback_api(query)
+    soup = BeautifulSoup(response.text, "html.parser")
+    items = soup.select(".ui-search-result")
 
-    results = _sort_by_relevance(results, query)[:MAX_RESULTS]
+    results: list[dict] = []
+    for item in items:
+        parsed = _parse_item(item)
+        if parsed:
+            results.append(parsed)
+        if len(results) >= MAX_RESULTS:
+            break
+
     print(f"[Mercado Libre] Resultados encontrados: {len(results)}")
 
     if not results:
@@ -234,11 +243,17 @@ def buscar_mercadolibre(query: str) -> list[dict]:
 #         html = page.content()
 #         browser.close()
 #
-#     results = _extract_from_html(html) or _extract_from_jsonld(html)
-#     return _sort_by_relevance(results, query)[:MAX_RESULTS]
+#     soup = BeautifulSoup(html, "html.parser")
+#     items = soup.select(".ui-search-result")
+#     results = []
+#     for item in items[:MAX_RESULTS]:
+#         parsed = _parse_item(item)
+#         if parsed:
+#             results.append(parsed)
+#     return results
 
 
 def search_mercadolibre(query: str) -> dict | None:
-    """Compatibilidad con el flujo actual: retorna el mejor resultado por relevancia."""
+    """Compatibilidad con el flujo actual: retorna solo el primer resultado."""
     results = buscar_mercadolibre(query)
     return results[0] if results else None
