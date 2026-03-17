@@ -29,6 +29,7 @@ def _normalize_token(token: str) -> str:
 
 
 def _tokenize(text: str) -> set[str]:
+    """Tokeniza en minúsculas y normaliza plural simple para mejorar matching."""
     return {_normalize_token(t) for t in WORD_RE.findall(text or "")}
 
 
