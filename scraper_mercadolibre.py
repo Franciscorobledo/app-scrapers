@@ -1,108 +1,110 @@
-import re
 from urllib.parse import quote_plus
 
 import requests
 from bs4 import BeautifulSoup
+
+BASE_URL = "https://listado.mercadolibre.cl"
+TIMEOUT = 20
+MAX_RESULTS = 5
 
 HEADERS = {
     "User-Agent": (
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
         "AppleWebKit/537.36 (KHTML, like Gecko) "
         "Chrome/124.0.0.0 Safari/537.36"
-    )
+    ),
+    "Accept-Language": "es-CL,es-419;q=0.9,es;q=0.8,en;q=0.7",
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
 }
-TIMEOUT = 20
-WORD_RE = re.compile(r"[a-z0-9áéíóúñ]+", re.IGNORECASE)
 
 
 def _clean_text(value: str) -> str:
     return " ".join((value or "").split()).strip()
 
 
-def _tokenize(text: str) -> set[str]:
-    return {t.lower() for t in WORD_RE.findall(text or "")}
+def _build_search_url(query: str) -> str:
+    return f"{BASE_URL}/{quote_plus(query)}"
 
 
-def _similarity_score(query: str, candidate_name: str) -> int:
-    query_tokens = _tokenize(query)
-    name_tokens = _tokenize(candidate_name)
-    if not query_tokens or not name_tokens:
-        return 0
+def _parse_item(item) -> dict | None:
+    title_node = item.select_one(".ui-search-item__title")
+    price_node = item.select_one(".andes-money-amount__fraction")
+    link_node = item.select_one("a[href]")
 
-    score = len(query_tokens.intersection(name_tokens)) * 10
-    if query.lower() in (candidate_name or "").lower():
-        score += 5
-    return score
+    nombre = _clean_text(title_node.get_text(" ") if title_node else "")
+    precio = _clean_text(price_node.get_text(" ") if price_node else "")
+    url = _clean_text(link_node.get("href", "") if link_node else "")
 
-
-def _search_mercadolibre_requests(query: str, limit: int = 12) -> dict | None:
-    url = f"https://listado.mercadolibre.cl/{quote_plus(query)}"
-    response = requests.get(url, headers=HEADERS, timeout=TIMEOUT)
-    response.raise_for_status()
-
-    soup = BeautifulSoup(response.text, "html.parser")
-    items = soup.select("li.ui-search-layout__item")
-    if not items:
+    if not nombre or not url:
         return None
-
-    candidates: list[dict] = []
-    for item in items[:limit]:
-        link = item.select_one("a.ui-search-item__group__element")
-        if not link:
-            continue
-
-        title = item.select_one("h2.ui-search-item__title")
-        name = _clean_text(title.get_text(" ") if title else "")
-        if not name:
-            continue
-
-        fraction = item.select_one("span.andes-money-amount__fraction")
-        cents = item.select_one("span.andes-money-amount__cents")
-
-        price = ""
-        if fraction:
-            price = f"${_clean_text(fraction.get_text())}"
-            if cents:
-                price = f"{price},{_clean_text(cents.get_text())}"
-
-        candidates.append(
-            {
-                "nombre": name,
-                "precio": price,
-                "url": link.get("href", ""),
-                "score": _similarity_score(query, name),
-            }
-        )
-
-    if not candidates:
-        return None
-
-    best = max(candidates, key=lambda c: c["score"])
-    if best["score"] == 0:
-        return {
-            "nombre": candidates[0]["nombre"],
-            "precio": candidates[0]["precio"],
-            "url": candidates[0]["url"],
-        }
 
     return {
-        "nombre": best["nombre"],
-        "precio": best["precio"],
-        "url": best["url"],
+        "tienda": "MercadoLibre",
+        "nombre": nombre,
+        "precio": precio,
+        "url": url,
     }
 
 
-def _search_mercadolibre_playwright(query: str) -> dict | None:
-    """Prepared fallback for dynamic pages if needed in the future.
+def buscar_mercadolibre(query: str) -> list[dict]:
+    if not _clean_text(query):
+        print("No se encontraron resultados en Mercado Libre")
+        return []
 
-    This keeps architecture ready without forcing playwright dependency.
-    """
-    return None
+    search_url = _build_search_url(query)
+    print(f"[Mercado Libre] URL consultada: {search_url}")
+
+    try:
+        response = requests.get(search_url, headers=HEADERS, timeout=TIMEOUT)
+        response.raise_for_status()
+    except requests.RequestException as exc:
+        print(f"[Mercado Libre] Error en request: {exc}")
+        return []
+
+    soup = BeautifulSoup(response.text, "html.parser")
+    items = soup.select(".ui-search-result")
+
+    results: list[dict] = []
+    for item in items:
+        parsed = _parse_item(item)
+        if parsed:
+            results.append(parsed)
+        if len(results) >= MAX_RESULTS:
+            break
+
+    print(f"[Mercado Libre] Resultados encontrados: {len(results)}")
+
+    if not results:
+        print("No se encontraron resultados en Mercado Libre")
+        return []
+
+    return results
+
+
+# BONUS: fallback preparado para Playwright (comentado)
+# def buscar_mercadolibre_playwright(query: str) -> list[dict]:
+#     from playwright.sync_api import sync_playwright
+#
+#     url = _build_search_url(query)
+#     with sync_playwright() as p:
+#         browser = p.chromium.launch(headless=True)
+#         page = browser.new_page()
+#         page.goto(url, wait_until="domcontentloaded", timeout=45000)
+#         page.wait_for_timeout(2000)
+#         html = page.content()
+#         browser.close()
+#
+#     soup = BeautifulSoup(html, "html.parser")
+#     items = soup.select(".ui-search-result")
+#     results = []
+#     for item in items[:MAX_RESULTS]:
+#         parsed = _parse_item(item)
+#         if parsed:
+#             results.append(parsed)
+#     return results
 
 
 def search_mercadolibre(query: str) -> dict | None:
-    try:
-        return _search_mercadolibre_requests(query)
-    except Exception as exc:
-        print(f"[Mercado Libre] requests falló ({exc}), intentando fallback preparado")
-        return _search_mercadolibre_playwright(query)
+    """Compatibilidad con el flujo actual: retorna solo el primer resultado."""
+    results = buscar_mercadolibre(query)
+    return results[0] if results else None
