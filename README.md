@@ -1,32 +1,46 @@
-# App Scrapers
+# App Scrapers API (Flask)
 
-Script de scraping para comparar productos en tiendas chilenas (Sodimac, Mercado Libre y Easy) usando un Excel de entrada.
+API en Flask para scraping de productos en Chile, pensada para consumo desde n8n.
 
-## Requisitos
+## Endpoints
+
+- `GET /health` → `{"status": "ok"}`
+- `GET /test` → `{"message": "API funcionando correctamente"}`
+- `POST /scrape` (multipart/form-data)
+  - campo `file` con Excel y columnas `SKU` y `Nombre`
+- `POST /scrape-json`
+  - body:
+    ```json
+    {
+      "productos": [
+        {"sku": "ABC123", "nombre": "Taladro"}
+      ]
+    }
+    ```
+
+## Estructura
+
+- `main.py` → Flask app + endpoints
+- `scraper_sodimac.py` → scraping Sodimac
+- `scraper_mercadolibre.py` → scraping Mercado Libre
+- `scraper_easy.py` → scraping Easy
+
+## Ejecutar local
 
 ```bash
 pip install -r requirements.txt
+python main.py
 ```
 
-## Uso
+## Deploy en Render
 
-1. Crear un archivo `productos.xlsx` con columnas:
-   - `SKU`
-   - `Nombre`
-2. Ejecutar:
+La app usa:
+
+- `host="0.0.0.0"`
+- `port = int(os.environ.get("PORT", 5000))`
+
+Comando recomendado de inicio:
 
 ```bash
-python app.py
+python main.py
 ```
-
-3. El script generará `resultados.xlsx` con columnas:
-   - SKU original
-   - Nombre original
-   - Nombre encontrado
-   - Precio
-   - URL
-   - Tienda
-
-## Nota de despliegue en Render
-
-Si Render intenta correr `python app.py`, este repositorio ahora incluye ese archivo en la raíz.
